@@ -46,16 +46,16 @@ func Example() {
 	v2, _ := aesgcm.New(ratchet.Ref{Version: 2, KeyID: "customer-2026-01"}, key2)
 	r, _ = ratchet.New(ratchet.Config{
 		Current:     v2,
-		DecryptOnly: []ratchet.Decrypter{ratchet.ReadOnly(v1)},
+		DecryptOnly: []ratchet.Decrypter{v1},
 	})
 
 	pt, _ := r.Decrypt(stored, aad)
-	fmt.Println(string(pt), r.NeedsRewrap(stored))
+	fmt.Println(string(pt), stored.Ref)
 
-	stored, _, _ = r.Rewrap(stored, aad)
-	fmt.Println(stored.Ref, r.NeedsRewrap(stored))
+	stored, changed, _ := r.Rewrap(stored, aad)
+	fmt.Println(stored.Ref, changed)
 
 	// Output:
-	// A123456789 true
-	// v2/customer-2026-01 false
+	// A123456789 v1/customer-2019
+	// v2/customer-2026-01 true
 }

@@ -23,15 +23,6 @@ type Cipher interface {
 	Decrypter
 }
 
-// ReadOnly hides the Encrypt method of c, so it can be handed to code that
-// must never write with it.
-func ReadOnly(c Decrypter) Decrypter { return readOnly{c} }
-
-type readOnly struct{ d Decrypter }
-
-func (r readOnly) Ref() Ref                               { return r.d.Ref() }
-func (r readOnly) Decrypt(ct, aad []byte) ([]byte, error) { return r.d.Decrypt(ct, aad) }
-
 // DecrypterFunc adapts an existing decryption routine, typically the one used
 // for data written before the ratchet was adopted, into a Decrypter.
 func DecrypterFunc(ref Ref, fn func(ciphertext, aad []byte) ([]byte, error)) Decrypter {

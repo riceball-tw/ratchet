@@ -72,7 +72,7 @@ func TestUpgradeFlow(t *testing.T) {
 
 	// Step 1: upgrade. v2 writes, v1 becomes read-only.
 	v2 := fake(2, "customer-2026-01")
-	r = mustNew(t, Config{Current: v2, DecryptOnly: []Decrypter{unversioned, ReadOnly(v1)}})
+	r = mustNew(t, Config{Current: v2, DecryptOnly: []Decrypter{unversioned, v1}})
 	e2, _ := r.Encrypt(pt, aad)
 	if e2.Ref != v2.Ref() {
 		t.Fatalf("encrypted with %s", e2.Ref)
@@ -96,19 +96,6 @@ func TestUpgradeFlow(t *testing.T) {
 	r = mustNew(t, Config{Current: v2})
 	if _, err := r.Decrypt(e1, aad); !errors.Is(err, ErrUnknownRef) {
 		t.Fatalf("decrypt dropped: %v", err)
-	}
-}
-
-func TestStatsCountsDecrypts(t *testing.T) {
-	v1, v2 := fake(1, "a"), fake(2, "b")
-	old, _ := v1.Encrypt([]byte("x"), nil)
-	r := mustNew(t, Config{Current: v2, DecryptOnly: []Decrypter{v1}})
-	r.Decrypt(Envelope{Ref: v1.Ref(), Ciphertext: old}, nil)
-	r.Decrypt(Envelope{Ref: v1.Ref(), Ciphertext: old}, nil)
-
-	want := []Usage{{v2.Ref(), RoleCurrent, 0}, {v1.Ref(), RoleDecryptOnly, 2}}
-	if got := r.Stats(); fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 

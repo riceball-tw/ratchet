@@ -16,9 +16,9 @@ DecryptOnly schemes are `Decrypter`s, so writing with an old scheme does not com
 | ---------------------------- | ------------------------------------------------------------ |
 | Identify (version + `kid`)   | `Envelope` → `rk1:<version>:<kid>:<base64url>`               |
 | Select (central policy)      | `Config.Current` is the only `Cipher` that encrypts           |
-| Coexist (old is read-only)   | `Config.DecryptOnly []Decrypter`; `ReadOnly()` strips `Encrypt`    |
+| Coexist (old is read-only)   | `Config.DecryptOnly []Decrypter`                              |
 | Rotate and retire            | Move Current to DecryptOnly, `Rewrap`, then remove it     |
-| Observable                   | `Stats()` decrypt counts per scheme, `NeedsRewrap`            |
+| Observable                   | `OnNewerData` hook for mixed-version deploys and rollbacks    |
 
 `Version` identifies the algorithm and its parameters. `KeyID` identifies the key. Rotating to a new key under the same version is allowed.
 
@@ -59,7 +59,7 @@ Servers usually restart one at a time, so for a while some run the new config an
 ratchet.Config{Current: v1, DecryptOnly: []ratchet.Decrypter{unversioned, v2}}
 
 // Deploy 2b, after 2a reached every server: write v2, v1 becomes read-only.
-ratchet.Config{Current: v2, DecryptOnly: []ratchet.Decrypter{unversioned, ratchet.ReadOnly(v1)}}
+ratchet.Config{Current: v2, DecryptOnly: []ratchet.Decrypter{unversioned, v1}}
 ```
 
 If all servers switch at once (single instance, or a blue-green switch), deploy 2b directly.
@@ -69,7 +69,7 @@ If all servers switch at once (single instance, or a blue-green switch), deploy 
 ```go
 ratchet.Config{
     Current:     v2,
-    DecryptOnly: []ratchet.Decrypter{unversioned, ratchet.ReadOnly(v1)},
+    DecryptOnly: []ratchet.Decrypter{unversioned, v1},
     OnNewerData: func(found, current ratchet.Ref) {
         log.Printf("ratchet: read %s data but this server writes %s", found, current)
         newerDataCounter.Inc()
@@ -86,17 +86,21 @@ It fires when `Decrypt` sees data with a higher version than Current:
 ### Step 3: Migrate
 
 ```go
-if r.NeedsRewrap(env) {
-    env, _, err = r.Rewrap(env, aad)      // decrypt with old scheme, encrypt with Current
+env, changed, err := r.Rewrap(env, aad) // decrypt with old scheme, encrypt with Current
+if changed {
     db.Save(id, env.String())
 }
 ```
 
-Run this as a backfill job, or lazily on read. Watch `r.Stats()`.
+Run this as a backfill job, or lazily on read. Check progress in the database, by counting rows that still carry an old tag:
+
+```sql
+SELECT count(*) FROM customers WHERE tax_id LIKE 'rk1:1:%';
+```
 
 ### Step 4: Remove old schemes
 
-> **Check first.** After a scheme is removed from `DecryptOnly`, data still encrypted with it can no longer be decrypted (`ErrUnknownRef`). Remove it only after the backfill finished and `Stats()` shows zero decrypts for it.
+> **Check first.** After a scheme is removed from `DecryptOnly`, data still encrypted with it can no longer be decrypted (`ErrUnknownRef`). Remove it only after the backfill finished and the database has no rows with its tag left.
 
 ```go
 ratchet.Config{Current: v2}
