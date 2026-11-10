@@ -9,8 +9,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"example.com/ratchet"
-	"example.com/ratchet/aead"
+	"github.com/riceball-tw/ratchet"
+	"github.com/riceball-tw/ratchet/aead"
 )
 
 // New returns an AES-GCM Cipher. key must be 16, 24 or 32 bytes; prefer 32

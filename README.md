@@ -5,6 +5,12 @@ A minimal Go library for step-by-step crypto agility, based on the encrypt/decry
 
 Like a ratchet gear, the scheme used to create new values only moves forward.
 
+```bash
+go get github.com/riceball-tw/ratchet
+```
+
+Requires Go 1.24 or newer.
+
 ## Packages
 
 | Package              | What it is                                                                  |

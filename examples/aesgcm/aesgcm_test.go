@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"example.com/ratchet"
-	"example.com/ratchet/aead"
-	"example.com/ratchet/examples/aesgcm"
+	"github.com/riceball-tw/ratchet"
+	"github.com/riceball-tw/ratchet/aead"
+	"github.com/riceball-tw/ratchet/examples/aesgcm"
 )
 
 func TestTamperedRefFails(t *testing.T) {

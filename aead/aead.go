@@ -4,7 +4,7 @@
 // The package implements no algorithm; plug in any Cipher or Decrypter.
 package aead
 
-import "example.com/ratchet"
+import "github.com/riceball-tw/ratchet"
 
 // Decrypter can only read data. Config.DecryptOnly schemes are Decrypters.
 type Decrypter interface {

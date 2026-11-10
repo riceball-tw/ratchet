@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"example.com/ratchet"
+	"github.com/riceball-tw/ratchet"
 )
 
 // fakeCipher is not encryption. It tags data with its Ref and AAD so tests can
