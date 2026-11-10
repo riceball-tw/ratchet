@@ -139,3 +139,7 @@ A new algorithm type (for example password hashing, see `PASSWORD_PLAN.md`) is a
 1. Defines its "check" interface (`Verifier`, ...) with a `Ref() ratchet.Ref` method, and a "create" interface that extends it.
 2. Builds a `ratchet.Registry` of the check interface: `ratchet.New(ratchet.Config[Verifier]{Current: ..., CheckOnly: ...})`.
 3. Keeps its own Current creator, and adds its verbs on top of `Registry.Lookup`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
