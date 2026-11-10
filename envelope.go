@@ -18,8 +18,8 @@ type Ref struct {
 }
 
 // Unversioned is the Ref given to data written before the ratchet was adopted
-// (anything that does not start with the envelope prefix). Register a
-// Decrypter for it in Config.DecryptOnly to keep reading such data.
+// (anything that does not start with the envelope prefix). Register a scheme
+// for it in Config.CheckOnly to keep reading such data.
 var Unversioned = Ref{}
 
 func (r Ref) String() string {

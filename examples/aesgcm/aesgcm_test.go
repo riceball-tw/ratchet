@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"example.com/ratchet"
+	"example.com/ratchet/aead"
 	"example.com/ratchet/examples/aesgcm"
 )
 
@@ -36,7 +37,7 @@ func Example() {
 	rand.Read(key1)
 	v1, _ := aesgcm.New(ratchet.Ref{Version: 1, KeyID: "customer-2019"}, key1)
 
-	r, _ := ratchet.New(ratchet.Config{Current: v1})
+	r, _ := aead.New(aead.Config{Current: v1})
 	aad := []byte("tenant/acme:customers:42:tax-id")
 	stored, _ := r.Encrypt([]byte("A123456789"), aad)
 
@@ -44,9 +45,9 @@ func Example() {
 	key2 := make([]byte, 32)
 	rand.Read(key2)
 	v2, _ := aesgcm.New(ratchet.Ref{Version: 2, KeyID: "customer-2026-01"}, key2)
-	r, _ = ratchet.New(ratchet.Config{
+	r, _ = aead.New(aead.Config{
 		Current:     v2,
-		DecryptOnly: []ratchet.Decrypter{v1},
+		DecryptOnly: []aead.Decrypter{v1},
 	})
 
 	pt, _ := r.Decrypt(stored, aad)

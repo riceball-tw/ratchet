@@ -1,17 +1,19 @@
-// Package ratchet enforces one-way, step-by-step crypto agility.
+// Package ratchet is the algorithm-agnostic core of step-by-step crypto
+// agility.
 //
-// Like a ratchet gear, a service's encryption scheme only moves forward. A
-// scheme has one of two roles:
+// Like a ratchet gear, the scheme a service uses to create values only moves
+// forward. A scheme has one of two roles:
 //
-//   - Current: the single [Cipher] that encrypts all new data.
-//   - DecryptOnly: [Decrypter] values used only to read, usually old data.
+//   - Current: the single scheme that creates all new values.
+//   - CheckOnly: schemes used only to check existing values (decrypt, verify),
+//     usually old ones.
 //
-// Every ciphertext is wrapped in an [Envelope] that records the scheme version
-// and key ID used to produce it, so readers always know which Decrypter to
-// use. DecryptOnly schemes are accepted as Decrypters, so writing with an old
-// scheme is impossible by construction. Config.OnNewerData reports data
-// written with a higher version than Current, which signals a server running
-// an older config than its peers, or a rollback.
+// Every stored value is wrapped in an [Envelope] that records the scheme
+// version and key ID that produced it, so readers always know which scheme to
+// use. A [Registry] maps each [Ref] to its scheme, and Config.OnNewerData
+// reports values created with a higher version than Current, which signals a
+// server running an older config than its peers, or a rollback.
 //
-// The package implements no algorithm; plug in any Cipher or Decrypter.
+// This package contains no algorithm-type logic. Packages such as
+// ratchet/aead add the verbs for one algorithm type on top of [Registry].
 package ratchet
