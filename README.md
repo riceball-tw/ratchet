@@ -30,7 +30,7 @@ DecryptOnly schemes are `Decrypter`s, so writing with an old scheme does not com
 
 | Article principle            | Library feature                                              |
 | ---------------------------- | ------------------------------------------------------------ |
-| Identify (version + `kid`)   | `Envelope` → `rk1:<version>:<kid>:<base64url>`               |
+| Identify (version + `kid`)   | `Envelope` → `ratchet:<version>:<kid>:<base64url>`               |
 | Select (central policy)      | `Config.Current` is the only `Cipher` that encrypts           |
 | Coexist (old is read-only)   | `Config.DecryptOnly []Decrypter`                              |
 | Rotate and retire            | Move Current to DecryptOnly, `Rewrap`, then remove it     |
@@ -42,7 +42,7 @@ DecryptOnly schemes are `Decrypter`s, so writing with an old scheme does not com
 
 ### Step 0: Adopt
 
-Wrap your existing decrypt routine. Data with no `rk1:` prefix is treated as `ratchet.Unversioned`.
+Wrap your existing decrypt routine. Data with no `ratchet:` prefix is treated as `ratchet.Unversioned`.
 
 ```go
 unversioned := aead.DecrypterFunc(ratchet.Unversioned, oldDecrypt)
@@ -58,7 +58,7 @@ r, err := aead.New(aead.Config{
 
 ```go
 env, _ := r.Encrypt(plaintext, aad)       // always Current
-db.Save(id, env.String())                 // "rk1:1:customer-2019:..."
+db.Save(id, env.String())                 // "ratchet:1:customer-2019:..."
 
 env, _ := ratchet.ParseEnvelope(stored)
 pt, _ := r.Decrypt(env, aad)              // picks the scheme by (version, kid)
@@ -111,7 +111,7 @@ if changed {
 Run this as a backfill job, or lazily on read. Check progress in the database, by counting rows that still carry an old tag:
 
 ```sql
-SELECT count(*) FROM customers WHERE tax_id LIKE 'rk1:1:%';
+SELECT count(*) FROM customers WHERE tax_id LIKE 'ratchet:1:%';
 ```
 
 ### Step 4: Remove old schemes

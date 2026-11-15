@@ -81,10 +81,10 @@ func TestInvalidConfig(t *testing.T) {
 
 func TestEnvelopeFormat(t *testing.T) {
 	env := Envelope{Ref: Ref{Version: 2, KeyID: "customer-2026-01"}, Ciphertext: []byte{0xff, 0x00}}
-	if got, want := env.String(), "rk1:2:customer-2026-01:_wA"; got != want {
+	if got, want := env.String(), "ratchet:2:customer-2026-01:_wA"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
-	for _, bad := range []string{"rk1:", "rk1:2:k", "rk1:0:k:AA", "rk1:x:k:AA", "rk1:2::AA", "rk1:2:k:!!"} {
+	for _, bad := range []string{"ratchet:", "ratchet:2:k", "ratchet:0:k:AA", "ratchet:x:k:AA", "ratchet:2::AA", "ratchet:2:k:!!"} {
 		if _, err := ParseEnvelope(bad); !errors.Is(err, ErrMalformed) {
 			t.Errorf("%q: %v", bad, err)
 		}

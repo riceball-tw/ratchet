@@ -55,11 +55,13 @@ type Envelope struct {
 	Ciphertext []byte
 }
 
-const envelopePrefix = "rk1:"
+// envelopePrefix marks the first envelope layout. A future incompatible
+// layout would use a new prefix ("ratchet2:"), so both can be parsed.
+const envelopePrefix = "ratchet:"
 
 var ErrMalformed = errors.New("ratchet: malformed envelope")
 
-// MarshalText encodes the envelope as rk1:<version>:<kid>:<base64url ciphertext>.
+// MarshalText encodes the envelope as ratchet:<version>:<kid>:<base64url ciphertext>.
 // An Unversioned envelope is returned as its raw ciphertext.
 func (e Envelope) MarshalText() ([]byte, error) {
 	if e.Ref == Unversioned {
