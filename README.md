@@ -1,144 +1,112 @@
 # ratchet
 
-A minimal Go library for step-by-step crypto agility, based on the encrypt/decrypt interface from
-[密碼學敏捷性：把「密碼有天會被攻破」作為系統設計前提](https://www.webdong.dev/zh-tw/post/crypto-agility/).
+> Change algorithms and keys without rewriting your code or breaking stored data
 
-Like a ratchet gear, the scheme used to create new values only moves forward.
+Bring any algorithm, including the one already in production. ratchet only tracks which scheme
+made each value and moves you to the next one: new values use your newest scheme, old values
+stay usable. Like a ratchet gear, it only moves forward.
+
+Supports encryption (AEAD) today via `ratchet/aead`. The core is algorithm-type agnostic, so
+other types such as password hashing can plug in the same way.
 
 ```bash
 go get github.com/riceball-tw/ratchet
 ```
 
-Requires Go 1.24 or newer.
+Go 1.24+, standard library only.
 
-## Packages
-
-| Package              | What it is                                                                  |
-| -------------------- | --------------------------------------------------------------------------- |
-| `ratchet`            | Algorithm-agnostic core: `Ref`, `Envelope`, generic `Registry[R]`, `OnNewerData` |
-| `ratchet/aead`       | Encryption on top of the core: `Encrypt`, `Decrypt`, `Rewrap`                |
-| `ratchet/examples/…` | Reference implementations to copy, not part of the API                       |
-
-The rest of this README covers `ratchet/aead`. It has two roles:
-
-| Role        | Type        | Encrypt | Decrypt | Meaning                               |
-| ----------- | ----------- | ------- | ------- | ------------------------------------- |
-| **Current** | `Cipher`    | yes     | yes     | The one scheme all new data uses      |
-| **DecryptOnly** | `Decrypter` | no  | yes     | Old schemes, or the next one being rolled out |
-
-DecryptOnly schemes are `Decrypter`s, so writing with an old scheme does not compile.
-
-| Article principle            | Library feature                                              |
-| ---------------------------- | ------------------------------------------------------------ |
-| Identify (version + `kid`)   | `Envelope` → `ratchet:<version>:<kid>:<base64url>`               |
-| Select (central policy)      | `Config.Current` is the only `Cipher` that encrypts           |
-| Coexist (old is read-only)   | `Config.DecryptOnly []Decrypter`                              |
-| Rotate and retire            | Move Current to DecryptOnly, `Rewrap`, then remove it     |
-| Observable                   | `OnNewerData` hook for mixed-version deploys and rollbacks    |
-
-`Version` identifies the algorithm and its parameters. `KeyID` identifies the key. Rotating to a new key under the same version is allowed.
-
-## Step by step
-
-### Step 0: Adopt
-
-Wrap your existing decrypt routine. Data with no `ratchet:` prefix is treated as `ratchet.Unversioned`.
+## Example
 
 ```go
-unversioned := aead.DecrypterFunc(ratchet.Unversioned, oldDecrypt)
-v1 := myCipher(ratchet.Ref{Version: 1, KeyID: "customer-2019"}) // any aead.Cipher
+import (
+    "github.com/riceball-tw/ratchet"
+    "github.com/riceball-tw/ratchet/aead"
+    "github.com/riceball-tw/ratchet/examples/aesgcm" // reference Cipher; copy it into your code
+)
 
-r, err := aead.New(aead.Config{
-    Current:     v1,
-    DecryptOnly: []aead.Decrypter{unversioned},
-})
+// Describe the scheme: version 1 of your algorithm, using the key named "master-key-2026".
+schemeV1 := ratchet.Ref{Version: 1, KeyID: "master-key-2026"}
+cipherV1, err := aesgcm.New(schemeV1, aes256Key) // aes256Key is 32 bytes from your KMS
+
+// Build the ratchet. cipherV1 is the only scheme that encrypts new data.
+encryptor, err := aead.New(aead.Config{Current: cipherV1})
+
+// Associated data ties the ciphertext to one record, so it can't be copied to another row.
+recordID := []byte("customers/42/tax_id")
+
+// Encrypt, then store the envelope as a string.
+envelope, err := encryptor.Encrypt([]byte("A123456789"), recordID)
+storedValue := envelope.String() // "ratchet:1:master-key-2026:..."
+
+// Later: parse the stored string and decrypt. The envelope says which scheme to use.
+parsedEnvelope, err := ratchet.ParseEnvelope(storedValue)
+plaintext, err := encryptor.Decrypt(parsedEnvelope, recordID)
 ```
 
-### Step 1: Route all writes through the ratchet
+Error checks are left out for brevity; handle every `err` in real code.
+
+`examples/aesgcm` is a reference `Cipher` to copy. ratchet itself ships no algorithm: bring
+AES-GCM, ChaCha20, Tink, a KMS call, or a PQC hybrid.
+
+## Envelope format
+
+Every stored value says which scheme made it:
+
+```text title="Ratchet Envelope Demo"
+ratchet:1:mk1:aJHaGWyInGkfczT1HY3s3tNtyKU_mXRbKlyIRT1b0ogNjhc
+│       │ │   └ base64url(ciphertext)
+│       │ └ KeyID: which key
+│       └ Version: which algorithm
+└ Identifies data in the ratchet envelope format (no prefix means an Unversioned Ref)
+```
+
+## Why
+
+Crypto code gets written once, then a key leaks, an algorithm ages out, or nobody can say
+which format a stored value is in. ratchet makes each of those a config change plus a backfill:
+
+- **Know what made every value.** "Are we done migrating?" is `WHERE col LIKE 'ratchet:1:%'`.
+- **Only one scheme writes.** Old schemes are decrypt-only; writing with them does not compile.
+- **Start from what you have.** Wrap your existing decrypt function; untagged data still reads.
+
+## Upgrading, in short
 
 ```go
-env, _ := r.Encrypt(plaintext, aad)       // always Current
-db.Save(id, env.String())                 // "ratchet:1:customer-2019:..."
+// legacyDecrypter wraps the decrypt function you already have in production.
+legacyDecrypter := aead.DecrypterFunc(ratchet.Unversioned, existingDecryptFunc)
 
-env, _ := ratchet.ParseEnvelope(stored)
-pt, _ := r.Decrypt(env, aad)              // picks the scheme by (version, kid)
+// 1. Today: cipherV1 encrypts, untagged legacy data still decrypts.
+aead.Config{Current: cipherV1, DecryptOnly: []aead.Decrypter{legacyDecrypter}}
+
+// 2a. Deploy to every server: cipherV2 can decrypt, but nothing writes it yet.
+aead.Config{Current: cipherV1, DecryptOnly: []aead.Decrypter{legacyDecrypter, cipherV2}}
+
+// 2b. Then switch new writes to cipherV2. cipherV1 becomes decrypt-only.
+aead.Config{Current: cipherV2, DecryptOnly: []aead.Decrypter{legacyDecrypter, cipherV1}}
+
+// 3. Backfill: re-encrypt old rows with encryptor.Rewrap(envelope, recordID)
+//    until no untagged or 'ratchet:1:%' rows remain.
+
+// 4. Remove cipherV1 and the legacy decrypter.
+aead.Config{Current: cipherV2}
 ```
 
-Use a stable record identity (tenant/table/row/field) as AAD, so a ciphertext cannot be copied to another row.
+> **Warning:** removing a scheme makes data still encrypted with it unreadable. Drop it only
+> after the backfill finishes.
 
-### Step 2: Upgrade in two deploys
+Full walkthrough, key-handling advice, and how to add your own algorithm: **[docs/GUIDE.md](docs/GUIDE.md)**.
 
-Servers usually restart one at a time, so for a while some run the new config and some the old one. If a new server writes v2 while an old one only knows v1, the old one fails to read that data. Avoid it with two deploys:
+## When not to use it
 
-```go
-// Deploy 2a, to every server: still write v1, but v2 is now readable.
-aead.Config{Current: v1, DecryptOnly: []aead.Decrypter{unversioned, v2}}
+ratchet picks **which scheme** to use. It does not implement algorithms or manage keys.
 
-// Deploy 2b, after 2a reached every server: write v2, v1 becomes read-only.
-aead.Config{Current: v2, DecryptOnly: []aead.Decrypter{unversioned, v1}}
-```
+- Starting fresh with no legacy data? [Tink](https://developers.google.com/tink) gives you
+  algorithms, keysets and KMS integration out of the box.
+- Want encryption as a service? [Vault Transit](https://developer.hashicorp.com/vault/docs/secrets/transit)
+  uses the same versioned-ciphertext model with server-held keys.
 
-If all servers switch at once (single instance, or a blue-green switch), deploy 2b directly.
-
-#### Detect version mismatches with `OnNewerData`
-
-```go
-aead.Config{
-    Current:     v2,
-    DecryptOnly: []aead.Decrypter{unversioned, v1},
-    OnNewerData: func(found, current ratchet.Ref) {
-        log.Printf("ratchet: read %s data but this server writes %s", found, current)
-        newerDataCounter.Inc()
-    },
-}
-```
-
-It fires when `Decrypt` sees data with a higher version than Current:
-
-- During deploy 2b, briefly: expected (servers still on 2a read v2 data).
-- Lasting after the deploy: a server runs an old config, or was rolled back. Alert on this.
-- With `ErrUnknownRef`: the server cannot read that data at all. Deploy 2a was skipped, or a full rollback happened.
-
-### Step 3: Migrate
-
-```go
-env, changed, err := r.Rewrap(env, aad) // decrypt with old scheme, encrypt with Current
-if changed {
-    db.Save(id, env.String())
-}
-```
-
-Run this as a backfill job, or lazily on read. Check progress in the database, by counting rows that still carry an old tag:
-
-```sql
-SELECT count(*) FROM customers WHERE tax_id LIKE 'ratchet:1:%';
-```
-
-### Step 4: Remove old schemes
-
-> **Check first.** After a scheme is removed from `DecryptOnly`, data still encrypted with it can no longer be decrypted (`ErrUnknownRef`). Remove it only after the backfill finished and the database has no rows with its tag left.
-
-```go
-aead.Config{Current: v2}
-```
-
-Repeat from Step 2 when the next algorithm arrives (for example, a PQC hybrid).
-
-## Bring your own algorithm
-
-Neither `ratchet` nor `ratchet/aead` implements an algorithm. Implement `Decrypter` for a read-only scheme, or `Cipher` (Ref + Encrypt + Decrypt) for a scheme that can become Current. Any algorithm works: AES-GCM, ChaCha20-Poly1305, a KMS call, a PQC hybrid.
-
-Bind `Ref` into the authenticated data, so that relabeling an envelope's version or key ID makes decryption fail.
-
-`examples/aesgcm` is reference code to copy: an AES-GCM `Cipher` with `Ref` bound into the AAD, plus a full `Example`. It is not part of the core API.
-
-## Adding another algorithm type
-
-A new algorithm type (for example password hashing, see `PASSWORD_PLAN.md`) is a package next to `aead` that:
-
-1. Defines its "check" interface (`Verifier`, ...) with a `Ref() ratchet.Ref` method, and a "create" interface that extends it.
-2. Builds a `ratchet.Registry` of the check interface: `ratchet.New(ratchet.Config[Verifier]{Current: ..., CheckOnly: ...})`.
-3. Keeps its own Current creator, and adds its verbs on top of `Registry.Lookup`.
+ratchet fits when you **already have encrypted data in production** and need a disciplined
+way to move it forward.
 
 ## License
 
