@@ -60,6 +60,39 @@ ratchet:1:mk1:aJHaGWyInGkfczT1HY3s3tNtyKU_mXRbKlyIRT1b0ogNjhc
 └ Identifies data in the ratchet envelope format (no prefix means an Unversioned Ref)
 ```
 
+An envelope is a **Ref** (which algorithm and key) plus the **ciphertext** a Cipher produced:
+
+```mermaid
+flowchart LR
+    subgraph Ref["Ref (label)"]
+        V["Version<br/>which algorithm"]
+        K["KeyID<br/>which key"]
+    end
+    C["Ciphertext<br/>made by Cipher"]
+    V --> E
+    K --> E
+    C --> E
+    E["Envelope<br/>ratchet:1:mk1:aJHaGW..."]
+```
+
+On decrypt, ratchet reads the Ref from the envelope and finds the Cipher registered with the
+same Ref. That is how old and new schemes live side by side:
+
+```mermaid
+flowchart TB
+    subgraph Registered["Registered Ciphers"]
+        C1["Cipher v1<br/>Ref = 1:mk1<br/>decrypt-only"]
+        C2["Cipher v2<br/>Ref = 2:mk2<br/>current"]
+    end
+
+    P["plaintext"] -->|"Encrypt"| C2
+    C2 -->|"ciphertext + its Ref"| E1["Envelope<br/>ratchet:2:mk2:..."]
+
+    E2["Stored envelope<br/>ratchet:1:mk1:..."] -->|"read Ref"| L{"find Cipher<br/>with same Ref"}
+    L --> C1
+    C1 -->|"Decrypt"| P2["plaintext"]
+```
+
 ## Why
 
 Crypto code gets written once, then a key leaks, an algorithm ages out, or nobody can say
