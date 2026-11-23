@@ -24,6 +24,7 @@ import (
     "github.com/riceball-tw/ratchet/examples/aesgcm" // reference Cipher; copy it into your code
 )
 
+// ──────────────── Day 1: only v1 exists ────────────────
 // Describe the scheme: version 1 of your algorithm, using the key named "master-key-2026".
 schemeV1 := ratchet.Ref{Version: 1, KeyID: "master-key-2026"}
 cipherV1, err := aesgcm.New(schemeV1, aes256Key) // aes256Key is 32 bytes from your KMS
@@ -41,6 +42,23 @@ storedValue := envelope.String() // "ratchet:1:master-key-2026:..."
 // Later: parse the stored string and decrypt. The envelope says which scheme to use.
 parsedEnvelope, err := ratchet.ParseEnvelope(storedValue)
 plaintext, err := encryptor.Decrypt(parsedEnvelope, recordID)
+
+// ──────────────── Months later: time to rotate the key or algorithm ────────────────
+// Make cipherV2, and keep cipherV1 for reading only.
+schemeV2 := ratchet.Ref{Version: 2, KeyID: "master-key-2027"}
+cipherV2, err := aesgcm.New(schemeV2, newAES256Key)
+
+encryptor, err = aead.New(aead.Config{
+    Current:     cipherV2,                         // all new data uses v2
+    DecryptOnly: []aead.Decrypter{cipherV1},       // old v1 data still readable
+})
+
+// The old v1 envelope still decrypts: its Ref says "use cipherV1".
+plaintext, err = encryptor.Decrypt(parsedEnvelope, recordID)
+
+// New writes are v2.
+envelope, err = encryptor.Encrypt([]byte("A123456789"), recordID)
+storedValue = envelope.String() // "ratchet:2:master-key-2027:..."
 ```
 
 Error checks are left out for brevity; handle every `err` in real code.
